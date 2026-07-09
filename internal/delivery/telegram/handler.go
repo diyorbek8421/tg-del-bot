@@ -355,9 +355,77 @@ func isMediaMessage(msg *tgbotapi.Message) bool {
 	return len(msg.Photo) > 0 || msg.Video != nil || msg.Voice != nil || msg.Audio != nil || msg.Document != nil || msg.Animation != nil || msg.VideoNote != nil || msg.Sticker != nil
 }
 
+func (h *TelegramHandler) saveRepliedMediaMessage(ctx context.Context, replyMsg *tgbotapi.Message) {
+	if replyMsg == nil || replyMsg.Chat == nil || !isMediaMessage(replyMsg) {
+		return
+	}
+
+	message := &domain.Message{
+		ChatID:    replyMsg.Chat.ID,
+		MessageID: int64(replyMsg.MessageID),
+		Text:      replyMsg.Caption,
+		UpdatedAt: time.Now(),
+	}
+
+	if replyMsg.From != nil {
+		message.UserID = replyMsg.From.ID
+		message.Username = replyMsg.From.UserName
+	}
+
+	if replyMsg.Date != 0 {
+		message.CreatedAt = time.Unix(int64(replyMsg.Date), 0)
+	} else {
+		message.CreatedAt = time.Now()
+	}
+
+	if len(replyMsg.Photo) > 0 {
+		message.MediaType = "photo"
+		message.MediaFileID = replyMsg.Photo[len(replyMsg.Photo)-1].FileID
+	} else if replyMsg.Video != nil {
+		message.MediaType = "video"
+		message.MediaFileID = replyMsg.Video.FileID
+	} else if replyMsg.Document != nil {
+		message.MediaType = "document"
+		message.MediaFileID = replyMsg.Document.FileID
+	} else if replyMsg.Audio != nil {
+		message.MediaType = "audio"
+		message.MediaFileID = replyMsg.Audio.FileID
+	} else if replyMsg.Voice != nil {
+		message.MediaType = "voice"
+		message.MediaFileID = replyMsg.Voice.FileID
+	} else if replyMsg.Animation != nil {
+		message.MediaType = "animation"
+		message.MediaFileID = replyMsg.Animation.FileID
+	} else if replyMsg.VideoNote != nil {
+		message.MediaType = "video_note"
+		message.MediaFileID = replyMsg.VideoNote.FileID
+	} else if replyMsg.Sticker != nil {
+		message.MediaType = "sticker"
+		message.MediaFileID = replyMsg.Sticker.FileID
+	}
+
+	if err := h.messageService.HandleNewBusinessMessage(ctx, message); err != nil {
+		log.Printf("Error saving replied media message: %v", err)
+	}
+}
+
 func (h *TelegramHandler) sendReplyMediaToChat(chatID int64, replyMsg *tgbotapi.Message, caption string) error {
 	if chatID == 0 || replyMsg == nil {
 		return fmt.Errorf("invalid target or reply message")
+	}
+
+	copyAttempt := func() error {
+		if replyMsg.Chat != nil && replyMsg.MessageID != 0 {
+			if err := h.copyMessageToChat(chatID, replyMsg.Chat.ID, replyMsg.MessageID, caption); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("copy attempt skipped or failed")
+	}
+
+	// Try copy first for disappearing media, because it preserves the message contents
+	if err := copyAttempt(); err == nil {
+		return nil
 	}
 
 	send := func(cfg tgbotapi.Chattable, mediaType string) error {
