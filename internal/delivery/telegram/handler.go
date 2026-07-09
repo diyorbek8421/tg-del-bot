@@ -766,11 +766,7 @@ func (h *TelegramHandler) handleEditedBusinessMessage(ctx context.Context, msg *
 	} else {
 		log.Printf("Skipping admin notification for subscriber edit in chat %d", msg.Chat.ID)
 	}
-	if msg.BusinessConnectionID != "" && msg.Chat != nil && msg.Chat.ID != h.adminChatID {
-		h.notifyBusinessSubscribers(ctx, msg.BusinessConnectionID, notification)
-	} else if msg.BusinessConnectionID != "" {
-		log.Printf("Skipping subscriber notification for admin chat edit %d", msg.Chat.ID)
-	}
+	log.Printf("Skipping broadcast edit notification to other subscribers for connectionID=%s", msg.BusinessConnectionID)
 	return nil
 }
 
@@ -877,10 +873,8 @@ func (h *TelegramHandler) handleDeletedBusinessMessages(ctx context.Context, upd
 		}
 		if chatID != 0 && chatID != h.adminChatID {
 			h.notifyBusinessSubscribersByChatID(ctx, chatID, notification)
-		} else if connectionID != "" && chatID != h.adminChatID {
-			h.notifyBusinessSubscribers(ctx, connectionID, notification)
 		} else {
-			log.Printf("handleDeletedBusinessMessages: skipping subscriber notification for admin chat %d or missing connectionID", chatID)
+			log.Printf("handleDeletedBusinessMessages: skipping broadcast subscriber notification for admin chat %d or unknown chatID", chatID)
 		}
 	}
 	return nil
